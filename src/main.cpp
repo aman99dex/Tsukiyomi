@@ -3,8 +3,8 @@
 #include "utils.h"
 
 constexpr int seed = 1;
-constexpr int n_iters = 2000;
-constexpr int plot_freq = 100;
+constexpr int n_iters = 1000;
+constexpr int plot_freq = 50;
 constexpr int n_preview_frames = 5;
 constexpr int n_final_frames = 35;
 

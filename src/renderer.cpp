@@ -103,9 +103,15 @@ torch::Tensor NeRFRenderer::render_rays(const RayData &rays, const torch::Tensor
       light_dir + view_dir,
       torch::nn::functional::NormalizeFuncOptions().dim(-1));
   auto NdotH = torch::relu(torch::sum(normal * half_vec, -1));
-  auto specular = torch::pow(NdotH, 1.0f / (roughness + 1e-6f));
+  
+  // Map roughness (0-1) to shininess (1-128)
+  // Roughness 0 -> Shininess 128 (Sharp)
+  // Roughness 1 -> Shininess 1 (Broad)
+  auto shininess = 128.0f * torch::pow(1.0f - roughness, 2.0f) + 1.0f;
+  auto specular = torch::pow(NdotH, shininess);
 
   auto rgb = diffuse + specular.unsqueeze(-1);
+  rgb = torch::clamp(rgb, 0.0f, 1.0f);
 
   // Render volume
   auto dists = torch::cat({z_vals.index({"...", Slice(1, None)}) -
