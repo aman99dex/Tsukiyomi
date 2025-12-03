@@ -33,3 +33,8 @@ if(CUDA_FOUND)
 else()
     target_link_libraries(cNeRF ${TORCH_LIBRARIES} ${OpenCV_LIBS})
 endif()
+
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(cNeRF OpenMP::OpenMP_CXX)
+endif()

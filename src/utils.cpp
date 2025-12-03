@@ -17,7 +17,16 @@ void set_seed(int seed) {
 
 // Determine the appropriate device for computation (CPU or GPU)
 torch::Device get_device() {
-  return torch::cuda::is_available() ? torch::kCUDA : torch::kCPU;
+  if (torch::cuda::is_available()) {
+    std::cout << "Using CUDA device" << std::endl;
+    return torch::kCUDA;
+  }
+  if (torch::mps::is_available()) {
+    std::cout << "Using MPS device" << std::endl;
+    return torch::kMPS;
+  }
+  std::cout << "Using CPU device" << std::endl;
+  return torch::kCPU;
 }
 
 bool parse_arguments(int argc, char *argv[], std::filesystem::path &data_path,

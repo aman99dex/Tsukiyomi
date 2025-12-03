@@ -3,7 +3,7 @@
 #include "utils.h"
 
 constexpr int seed = 1;
-constexpr int n_iters = 1000;
+constexpr int n_iters = 2000;
 constexpr int plot_freq = 50;
 constexpr int n_preview_frames = 5;
 constexpr int n_final_frames = 35;
@@ -18,6 +18,13 @@ int main(int argc, char *argv[]) {
 
   // Set the random seed
   set_seed(seed);
+
+  // Set number of threads for CPU parallelism
+  int num_threads = std::thread::hardware_concurrency();
+  if (num_threads > 0) {
+      torch::set_num_threads(num_threads);
+      std::cout << "Setting CPU threads to: " << num_threads << std::endl;
+  }
 
   // Determine device for computation
   torch::Device device = get_device();
