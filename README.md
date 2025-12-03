@@ -55,6 +55,10 @@ The project includes a demo mode that orbits a point light around the object, sh
 ## 🚀 Features
 
 *   **Pure C++**: No Python runtime required for training or rendering.
+*   **High Performance**:
+    *   **Mac MPS Support**: Fully accelerated on Apple Silicon (M1/M2/M3/M4) GPUs using Metal Performance Shaders.
+    *   **Multithreading**: Uses OpenMP for parallel CPU operations.
+    *   **Ray Batching**: Implements stochastic ray sampling for fast and robust training.
 *   **PBR Pipeline**: Disentangles geometry and materials for relighting.
 *   **Cross-Platform**: Compatible with **macOS (Apple Silicon/Intel)**, **Linux**, and **Windows**.
 *   **LibTorch Backend**: Uses PyTorch's C++ frontend for automatic differentiation and tensor operations.
@@ -69,6 +73,7 @@ The project includes a demo mode that orbits a point light around the object, sh
 2.  **C++ Compiler** (Clang, GCC, or MSVC) supporting C++17/20.
 3.  **LibTorch** (PyTorch C++ Library)
 4.  **OpenCV** (For image I/O)
+5.  **OpenMP** (For CPU multithreading)
 
 ### Step-by-Step Setup
 
@@ -98,7 +103,7 @@ brew install cmake opencv libomp
 
 **Ubuntu/Debian**
 ```bash
-sudo apt-get install cmake libopencv-dev
+sudo apt-get install cmake libopencv-dev libomp-dev
 ```
 
 **Windows**
@@ -142,10 +147,14 @@ Run the executable with the data directory and output directory.
 
 ### 3. Output
 The program will produce:
-*   **Training Logs**: Loss values in the console.
-*   **Preview Frames**: `frame_*.png` (saved periodically).
+*   **Training Logs**: Loss values in the console (updates every iteration).
+*   **Preview Frames**: `frame_*.png` (saved every 50 iterations).
 *   **Relighting Demo**: `light_orbit_*.png` (saved at the end).
     *   These images show the object with a **moving light source**, demonstrating the PBR capabilities.
+*   **Dataset Comparisons**: `dataset_view_*.png` (saved at the end).
+    *   Side-by-side comparison of Ground Truth vs. Rendered View.
+*   **3D Point Cloud**: `model.ply` (saved at the end).
+    *   Exported geometry that can be viewed in MeshLab or Blender.
 
 ---
 

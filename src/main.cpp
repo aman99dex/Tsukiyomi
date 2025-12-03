@@ -110,5 +110,11 @@ int main(int argc, char *argv[]) {
   render_and_save_light_orbit(renderer_hd, n_final_frames, output_path, 2.1f,
                               2.0f, 5.0f);
 
+  // Render dataset views for comparison
+  render_dataset_views(renderer_hd, poses, images, light_pos, output_path);
+
+  // Save 3D point cloud
+  save_point_cloud(model, device, output_path / "model.ply");
+
   return 0;
 }

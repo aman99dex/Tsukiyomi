@@ -7,6 +7,8 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
+using namespace torch::indexing;
+
 // Set up the random seed for reproducibility
 void set_seed(int seed) {
   torch::manual_seed(seed);
@@ -128,6 +130,100 @@ void render_and_save_light_orbit(const NeRFRenderer &renderer, int num_frames,
         output_folder / ("light_orbit_" + std::to_string(i) + ".png");
     save_image(rendered_image, file_path);
   }
+}
+
+void render_dataset_views(const NeRFRenderer &renderer,
+                          const torch::Tensor &poses,
+                          const torch::Tensor &images,
+                          const torch::Tensor &light_pos,
+                          const std::filesystem::path &output_path,
+                          int step) {
+  std::cout << "Rendering dataset views..." << std::endl;
+  int n_images = poses.size(0);
+  for (int i = 0; i < n_images; i += step) {
+    auto pose = poses[i];
+    auto target = images[i];
+    
+    auto rendered_image = renderer.render(pose, light_pos, false);
+    
+    // Concatenate target and rendered image side-by-side
+    auto combined = torch::cat({target, rendered_image}, 1);
+    
+    std::string file_path = output_path / ("dataset_view_" + std::to_string(i) + ".png");
+    save_image(combined, file_path);
+  }
+}
+
+void save_point_cloud(NeRFModel &model, const torch::Device &device,
+                      const std::filesystem::path &output_path,
+                      int resolution, float threshold) {
+  std::cout << "Generating point cloud..." << std::endl;
+  std::vector<std::string> lines;
+  lines.push_back("ply");
+  lines.push_back("format ascii 1.0");
+  
+  // Create a grid of points
+  auto x = torch::linspace(-2.0, 2.0, resolution, torch::dtype(torch::kFloat32).device(device));
+  auto y = torch::linspace(-2.0, 2.0, resolution, torch::dtype(torch::kFloat32).device(device));
+  auto z = torch::linspace(-2.0, 2.0, resolution, torch::dtype(torch::kFloat32).device(device));
+  auto grid = torch::meshgrid({x, y, z}, "xyz");
+  auto pts = torch::stack({grid[0], grid[1], grid[2]}, -1).reshape({-1, 3});
+  
+  // Query model in batches
+  int batch_size = 64000;
+  int n_pts = pts.size(0);
+  
+  std::vector<std::tuple<float, float, float, int, int, int>> valid_points;
+  
+  for (int i = 0; i < n_pts; i += batch_size) {
+    auto batch = pts.slice(0, i, std::min(i + batch_size, n_pts));
+    auto batch_embedded = model.add_positional_encoding(batch);
+    auto raw = model.forward(batch_embedded);
+    
+    auto sigma = torch::relu(raw.index({"...", 7}));
+    auto rgb = torch::sigmoid(raw.index({"...", Slice(0, 3)}));
+    
+    auto mask = sigma > threshold;
+    auto valid_indices = torch::nonzero(mask).squeeze();
+    
+    if (valid_indices.numel() > 0) {
+        auto valid_pts = batch.index_select(0, valid_indices).cpu();
+        auto valid_rgb = rgb.index_select(0, valid_indices).cpu();
+        
+        auto pts_acc = valid_pts.accessor<float, 2>();
+        auto rgb_acc = valid_rgb.accessor<float, 2>();
+        
+        for (int j = 0; j < valid_pts.size(0); ++j) {
+            valid_points.emplace_back(
+                pts_acc[j][0], pts_acc[j][1], pts_acc[j][2],
+                static_cast<int>(rgb_acc[j][0] * 255),
+                static_cast<int>(rgb_acc[j][1] * 255),
+                static_cast<int>(rgb_acc[j][2] * 255)
+            );
+        }
+    }
+  }
+  
+  lines.push_back("element vertex " + std::to_string(valid_points.size()));
+  lines.push_back("property float x");
+  lines.push_back("property float y");
+  lines.push_back("property float z");
+  lines.push_back("property uchar red");
+  lines.push_back("property uchar green");
+  lines.push_back("property uchar blue");
+  lines.push_back("end_header");
+  
+  std::ofstream outfile(output_path);
+  for (const auto& line : lines) {
+      outfile << line << "\n";
+  }
+  
+  for (const auto& p : valid_points) {
+      outfile << std::get<0>(p) << " " << std::get<1>(p) << " " << std::get<2>(p) << " "
+              << std::get<3>(p) << " " << std::get<4>(p) << " " << std::get<5>(p) << "\n";
+  }
+  outfile.close();
+  std::cout << "Saved point cloud to " << output_path << std::endl;
 }
 
 torch::Tensor create_spherical_pose(float azimuth, float elevation,

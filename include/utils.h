@@ -34,6 +34,17 @@ void render_and_save_light_orbit(const NeRFRenderer &renderer, int N_frames,
                                  float start_distance = 2.0f,
                                  float end_distance = 5.0f, int N_samples = 64);
 
+void render_dataset_views(const NeRFRenderer &renderer,
+                          const torch::Tensor &poses,
+                          const torch::Tensor &images,
+                          const torch::Tensor &light_pos,
+                          const std::filesystem::path &output_path,
+                          int step = 10);
+
+void save_point_cloud(NeRFModel &model, const torch::Device &device,
+                      const std::filesystem::path &output_path,
+                      int resolution = 100, float threshold = 5.0f);
+
 // Transformation and pose functions
 torch::Tensor create_spherical_pose(float azimuth, float elevation,
                                     float radius);
