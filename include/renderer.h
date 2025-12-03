@@ -17,20 +17,20 @@ public:
 
   const torch::Device &device() const { return device_; }
 
-private:
   typedef std::tuple<torch::Tensor, torch::Tensor> RayData;
 
+  RayData get_rays(const torch::Tensor &pose) const;
+  torch::Tensor render_rays(const RayData &rays, const torch::Tensor &light_pos,
+                            bool randomize, float start_distance = 2.0f,
+                            float end_distance = 5.0f, int n_samples = 64,
+                            int batch_size = 64000) const;
+
+private:
   NeRFModel &model_;
   const torch::Device &device_;
   int H_;
   int W_;
   float focal_;
-
-  RayData get_rays(const torch::Tensor &pose) const;
-  torch::Tensor render_rays(const RayData &rays, const torch::Tensor &light_pos,
-                            bool randomize, float start_distance,
-                            float end_distance, int n_samples,
-                            int batch_size) const;
 };
 
 #endif // RENDERER_H_

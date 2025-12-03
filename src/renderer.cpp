@@ -13,8 +13,15 @@ torch::Tensor NeRFRenderer::render(const torch::Tensor &pose, const torch::Tenso
                                    float end_distance, int n_samples,
                                    int batch_size) const {
   auto rays = get_rays(pose.to(device_));
-  return render_rays(rays, light_pos.to(device_), randomize, start_distance, end_distance, n_samples,
+  // Flatten rays for the renderer
+  auto rays_o = std::get<0>(rays).view({-1, 3});
+  auto rays_d = std::get<1>(rays).view({-1, 3});
+  
+  auto rgb_flat = render_rays(std::make_tuple(rays_o, rays_d), light_pos.to(device_), randomize, start_distance, end_distance, n_samples,
                      batch_size);
+                     
+  // Reshape back to image
+  return rgb_flat.view({H_, W_, 3});
 }
 
 NeRFRenderer::RayData NeRFRenderer::get_rays(const torch::Tensor &pose) const {
@@ -49,14 +56,17 @@ torch::Tensor NeRFRenderer::render_rays(const RayData &rays, const torch::Tensor
   auto rays_o = std::get<0>(rays);
   auto rays_d = std::get<1>(rays);
 
+  // Determine the number of rays (N)
+  int N = rays_o.size(0);
+
   // Compute 3D query points
   auto z_vals =
       torch::linspace(start_distance, end_distance, n_samples, device_)
-          .reshape({1, 1, n_samples})
-          .expand({H_, W_, n_samples})
+          .reshape({1, n_samples})
+          .expand({N, n_samples})
           .clone();
   if (randomize) {
-    z_vals += torch::rand({H_, W_, n_samples}, device_) *
+    z_vals += torch::rand({N, n_samples}, device_) *
               (start_distance - end_distance) / n_samples;
   }
   auto pts = rays_o.unsqueeze(-2) + rays_d.unsqueeze(-2) * z_vals.unsqueeze(-1);
@@ -77,7 +87,7 @@ torch::Tensor NeRFRenderer::render_rays(const RayData &rays, const torch::Tensor
       raw = torch::cat({raw, batch_raw}, 0);
     }
   }
-  raw = raw.view({H_, W_, n_samples, 8});
+  raw = raw.view({N, n_samples, 8});
 
   // Get volume properties
   auto albedo = torch::sigmoid(raw.index({"...", Slice(0, 3)}));
@@ -91,7 +101,7 @@ torch::Tensor NeRFRenderer::render_rays(const RayData &rays, const torch::Tensor
   auto light_dir = torch::nn::functional::normalize(
       light_pos - pts, torch::nn::functional::NormalizeFuncOptions().dim(-1));
   auto view_dir = torch::nn::functional::normalize(
-      -rays_d.unsqueeze(2).expand_as(pts),
+      -rays_d.unsqueeze(1).expand_as(pts),
       torch::nn::functional::NormalizeFuncOptions().dim(-1));
 
   // Diffuse
@@ -116,17 +126,17 @@ torch::Tensor NeRFRenderer::render_rays(const RayData &rays, const torch::Tensor
   // Render volume
   auto dists = torch::cat({z_vals.index({"...", Slice(1, None)}) -
                                z_vals.index({"...", Slice(None, -1)}),
-                           torch::full({1}, 1e10, device_).expand({H_, W_, 1})},
+                           torch::full({1}, 1e10, device_).expand({N, 1})},
                           -1);
   auto alpha = 1.0 - torch::exp(-sigma_a * dists);
   auto weights = torch::cumprod(1.0 - alpha + 1e-10, -1);
-  weights = alpha * torch::cat({torch::ones({H_, W_, 1}, device_),
+  weights = alpha * torch::cat({torch::ones({N, 1}, device_),
                                 weights.index({"...", Slice(None, -1)})},
                                -1);
 
   auto rgb_map = torch::sum(weights.unsqueeze(-1) * rgb, -2);
-  auto depth_map = torch::sum(weights * z_vals, -1);
-  auto acc_map = torch::sum(weights, -1);
+  // auto depth_map = torch::sum(weights * z_vals, -1);
+  // auto acc_map = torch::sum(weights, -1);
 
   return rgb_map;
 }

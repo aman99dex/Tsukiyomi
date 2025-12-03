@@ -3,7 +3,7 @@
 #include "utils.h"
 
 constexpr int seed = 1;
-constexpr int n_iters = 2000;
+constexpr int n_iters = 10000;
 constexpr int plot_freq = 50;
 constexpr int n_preview_frames = 5;
 constexpr int n_final_frames = 35;
@@ -57,22 +57,41 @@ int main(int argc, char *argv[]) {
     auto target = images[img_i];
     auto pose = poses[img_i];
 
+    // Random ray sampling (Batching)
+    auto rays = renderer.get_rays(pose.to(device));
+    auto rays_o = std::get<0>(rays).view({-1, 3});
+    auto rays_d = std::get<1>(rays).view({-1, 3});
+    auto target_flat = target.view({-1, 3});
+
+    // Select random indices
+    auto indices = torch::randperm(rays_o.size(0), torch::dtype(torch::kLong).device(device)).slice(0, 0, 2048);
+    auto batch_rays_o = rays_o.index_select(0, indices);
+    auto batch_rays_d = rays_d.index_select(0, indices);
+    auto batch_target = target_flat.index_select(0, indices);
+
     // Perform forward pass and compute loss
     optimizer.zero_grad();
-    auto rgb = renderer.render(pose, light_pos, true);
-    auto loss = torch::mse_loss(rgb, target);
+    auto rgb = renderer.render_rays(std::make_tuple(batch_rays_o, batch_rays_d), light_pos, true);
+    auto loss = torch::mse_loss(rgb, batch_target);
 
     // Perform backward pass and update model parameters
     loss.backward();
     optimizer.step();
 
     // Log progress periodically
-    if (i % plot_freq == 0) {
-      torch::NoGradGuard no_grad;
+    // Log progress every iteration
+    if (i % 1 == 0) {
       std::cout << "Iteration: " << i + 1 << " Loss: " << loss.item<float>()
                 << std::endl;
+    }
 
-      // Render and save orbiting preview for logging
+    // Render and save orbiting preview periodically
+    if (i % plot_freq == 0) {
+      // Render and save orbiting preview periodically
+      std::cout << "Rendering preview..." << std::endl;
+      // For preview, we still want to render full images, so we use the original render method (which calls render_rays internally)
+      // But we need to make sure render_rays can handle the full image shape (H*W rays)
+      // The updated render_rays handles flat rays, so we just need to reshape the output back to HxW
       render_and_save_orbit_views(renderer, light_pos, n_preview_frames, output_path,
                                   4.0f);
     }
