@@ -19,9 +19,26 @@ torch::Tensor NeRFRenderer::render(const torch::Tensor &pose, const torch::Tenso
   // Flatten rays for the renderer
   auto rays_o = std::get<0>(rays).view({-1, 3});
   auto rays_d = std::get<1>(rays).view({-1, 3});
-  
-  auto rgb_flat = render_rays(std::make_tuple(rays_o, rays_d), light_pos.to(device_), randomize, start_distance, end_distance, n_samples,
-                     batch_size, override_albedo, override_roughness, override_metallic);
+
+  int n_rays = rays_o.size(0);
+  torch::Tensor rgb_flat;
+
+  // Process rays in chunks to avoid OOM
+  int chunk_size = 4096; // Adjust based on available memory
+  for (int i = 0; i < n_rays; i += chunk_size) {
+      int end = std::min(i + chunk_size, n_rays);
+      auto chunk_rays_o = rays_o.slice(0, i, end);
+      auto chunk_rays_d = rays_d.slice(0, i, end);
+
+      auto chunk_rgb = render_rays(std::make_tuple(chunk_rays_o, chunk_rays_d), light_pos.to(device_), randomize, start_distance, end_distance, n_samples,
+                          batch_size, override_albedo, override_roughness, override_metallic);
+      
+      if (i == 0) {
+          rgb_flat = chunk_rgb;
+      } else {
+          rgb_flat = torch::cat({rgb_flat, chunk_rgb}, 0);
+      }
+  }
                      
   // Reshape back to image
   return rgb_flat.view({H_, W_, 3});
