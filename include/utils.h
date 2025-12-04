@@ -22,22 +22,23 @@ void save_image(const torch::Tensor &tensor,
 
 // Rendering helper functions
 void render_and_save_orbit_views(const NeRFRenderer &renderer,
-                                 const torch::Tensor &light_pos, int N_frames,
+                                 int num_frames,
                                  const std::filesystem::path &output_folder,
                                  float radius = 4.0f,
                                  float start_distance = 2.0f,
-                                 float end_distance = 5.0f, int N_samples = 64);
+                                 float end_distance = 6.0f, int n_samples = 64);
 
-void render_and_save_light_orbit(const NeRFRenderer &renderer, int N_frames,
+/*
+void render_and_save_light_orbit(const NeRFRenderer &renderer, int num_frames,
                                  const std::filesystem::path &output_folder,
                                  float radius = 4.0f,
                                  float start_distance = 2.0f,
-                                 float end_distance = 5.0f, int N_samples = 64);
+                                 float end_distance = 6.0f, int n_samples = 64);
+*/
 
 void render_dataset_views(const NeRFRenderer &renderer,
                           const torch::Tensor &poses,
                           const torch::Tensor &images,
-                          const torch::Tensor &light_pos,
                           const std::filesystem::path &output_path,
                           int step = 10);
 
@@ -47,7 +48,7 @@ void save_point_cloud(NeRFModel &model, const torch::Device &device,
 
 // Transformation and pose functions
 torch::Tensor create_spherical_pose(float azimuth, float elevation,
-                                    float radius);
+                                    float radius, bool flip_axes = false);
 torch::Tensor create_translation_matrix(float t);
 torch::Tensor create_phi_rotation_matrix(float phi);
 torch::Tensor create_theta_rotation_matrix(float theta);

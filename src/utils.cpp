@@ -68,23 +68,30 @@ void save_image(const torch::Tensor &tensor,
   // Assuming the input tensor is a 3-channel (HxWx3) image in the range [0, 1]
   auto height = tensor.size(0);
   auto width = tensor.size(1);
-  auto max = tensor.max();
-  auto min = tensor.min();
-  // auto tensor_normalized = tensor.mul(255)
-  auto tensor_normalized = ((tensor - min) / (max - min))
-                               .mul(255)
-                               .clamp(0, 255)
-                               .to(torch::kU8)
-                               .to(torch::kCPU)
-                               .flatten()
-                               .contiguous();
+  auto max = tensor.max().item<float>();
+  auto min = tensor.min().item<float>();
+  
+  std::cout << "Saving image " << file_path << " (Range: " << min << " to " << max << ")" << std::endl;
+
+  torch::Tensor tensor_normalized;
+  if (std::abs(max - min) < 1e-6) {
+      tensor_normalized = torch::zeros_like(tensor).to(torch::kU8);
+  } else {
+      tensor_normalized = ((tensor - min) / (max - min))
+                                   .mul(255)
+                                   .clamp(0, 255)
+                                   .to(torch::kU8);
+  }
+  
+  tensor_normalized = tensor_normalized.to(torch::kCPU).flatten().contiguous();
+  
   cv::Mat image(cv::Size(width, height), CV_8UC3, tensor_normalized.data_ptr());
   cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
   cv::imwrite(file_path.string(), image);
 }
 
 void render_and_save_orbit_views(const NeRFRenderer &renderer,
-                                 const torch::Tensor &light_pos, int num_frames,
+                                 int num_frames,
                                  const std::filesystem::path &output_folder,
                                  float radius, float start_distance,
                                  float end_distance, int n_samples) {
@@ -92,10 +99,11 @@ void render_and_save_orbit_views(const NeRFRenderer &renderer,
 
   for (int i = 0; i < num_frames; i++) {
     float azimuth = static_cast<float>(i) * 360.0f / num_frames;
-    auto pose = create_spherical_pose(azimuth, elevation, radius);
+    auto pose = create_spherical_pose(azimuth, elevation, radius).to(renderer.device());
 
-    auto rendered_image = renderer.render(pose, light_pos, false, start_distance,
+    auto rendered_result = renderer.render(pose, false, start_distance,
                                           end_distance, n_samples);
+    auto rendered_image = rendered_result["rgb"];
 
     std::string file_path =
         output_folder / ("frame_" + std::to_string(i) + ".png");
@@ -103,39 +111,18 @@ void render_and_save_orbit_views(const NeRFRenderer &renderer,
   }
 }
 
+/*
 void render_and_save_light_orbit(const NeRFRenderer &renderer, int num_frames,
                                  const std::filesystem::path &output_folder,
                                  float radius, float start_distance,
                                  float end_distance, int n_samples) {
-  float elevation = -30.0f;
-  // Fixed camera pose
-  auto pose = create_spherical_pose(0.0f, elevation, radius);
-  auto device = renderer.device();
-
-  for (int i = 0; i < num_frames; i++) {
-    float azimuth = static_cast<float>(i) * 360.0f / num_frames;
-    
-    // Orbiting light position
-    float phi = elevation * (M_PI / 180.0f);
-    float theta = azimuth * (M_PI / 180.0f);
-    float x = radius * std::cos(phi) * std::cos(theta);
-    float y = radius * std::cos(phi) * std::sin(theta);
-    float z = radius * std::sin(phi);
-    auto light_pos = torch::tensor({x, y, z}, device);
-
-    auto rendered_image = renderer.render(pose, light_pos, false, start_distance,
-                                          end_distance, n_samples);
-
-    std::string file_path =
-        output_folder / ("light_orbit_" + std::to_string(i) + ".png");
-    save_image(rendered_image, file_path);
-  }
+  // TODO: Implement environment rotation for NeILF
 }
+*/
 
 void render_dataset_views(const NeRFRenderer &renderer,
                           const torch::Tensor &poses,
                           const torch::Tensor &images,
-                          const torch::Tensor &light_pos,
                           const std::filesystem::path &output_path,
                           int step) {
   std::cout << "Rendering dataset views..." << std::endl;
@@ -144,7 +131,8 @@ void render_dataset_views(const NeRFRenderer &renderer,
     auto pose = poses[i];
     auto target = images[i];
     
-    auto rendered_image = renderer.render(pose, light_pos, false);
+    auto rendered_result = renderer.render(pose, false);
+    auto rendered_image = rendered_result["rgb"];
     
     // Concatenate target and rendered image side-by-side
     auto combined = torch::cat({target, rendered_image}, 1);
@@ -227,18 +215,21 @@ void save_point_cloud(NeRFModel &model, const torch::Device &device,
 }
 
 torch::Tensor create_spherical_pose(float azimuth, float elevation,
-                                    float radius) {
+                                    float radius, bool flip_axes) {
   float phi = elevation * (M_PI / 180.0f);
   float theta = azimuth * (M_PI / 180.0f);
 
   torch::Tensor c2w = create_translation_matrix(radius);
   c2w = create_phi_rotation_matrix(phi).matmul(c2w);
   c2w = create_theta_rotation_matrix(theta).matmul(c2w);
-  c2w = torch::tensor({{-1.0f, 0.0f, 0.0f, 0.0f},
-                       {0.0f, 0.0f, 1.0f, 0.0f},
-                       {0.0f, 1.0f, 0.0f, 0.0f},
-                       {0.0f, 0.0f, 0.0f, 1.0f}})
-            .matmul(c2w);
+  
+  if (flip_axes) {
+      c2w = torch::tensor({{-1.0f, 0.0f, 0.0f, 0.0f},
+                           {0.0f, 0.0f, 1.0f, 0.0f},
+                           {0.0f, 1.0f, 0.0f, 0.0f},
+                           {0.0f, 0.0f, 0.0f, 1.0f}})
+                .matmul(c2w);
+  }
 
   return c2w;
 }

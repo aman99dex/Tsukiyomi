@@ -20,38 +20,48 @@ Instead of predicting just `Color`, our neural network predicts:
 3.  **Albedo**: The base color of the material (independent of lighting).
 4.  **Roughness**: How shiny or matte the surface is.
 
-We then use a **Physics-Based Shader** (Blinn-Phong) during rendering to combine these properties with a light source to produce the final image.
+We then use a **Physics-Based Shader** (Cook-Torrance BRDF) and a **Neural Incident Light Field (NeILF)** to physically simulate light transport.
+
+### Comparison with Original PBR-NeRF
+While this project replicates the core results of the original paper, there are some implementation differences:
+*   **Lighting Model**: The original paper builds upon **NeILF++** (often separating Sun/Sky components). We implement a unified **NeILF** (single MLP) for simplicity and performance, which still captures high-frequency environment lighting.
+*   **Loss Functions**: We implement the **Energy Conservation Loss** as described. For the specular term, we use a **Roughness-Weighted Regularization** (`Specular * Roughness`) to disentangle materials, whereas the original paper uses a specific **NDF-weighted** formulation.
+*   **Architecture**: This is a **pure C++** implementation focused on speed and portability, whereas the original is a Python/PyTorch research codebase.
 
 ---
 
 ## ⚙️ Technical Implementation
 
 ### 1. Neural Network Architecture (`src/model.cpp`)
-We modified the standard MLP (Multi-Layer Perceptron) to output **9 channels**:
-*   **Channels 0-2 (Albedo)**: `Sigmoid` activation (0-1 range). Represents diffuse color.
-*   **Channel 3 (Roughness)**: `Sigmoid` activation (0-1 range). Controls specular highlight size.
-*   **Channel 4 (Metallic)**: `Sigmoid` activation (0-1 range). Controls metalness (0=Dielectric, 1=Metal).
-*   **Channels 5-7 (Normal)**: `Tanh` activation (-1 to 1 range). Normalized to unit vector. Represents surface orientation.
-*   **Channel 8 (Density)**: `ReLU` activation (0 to infinity). Represents opacity.
+We use two separate networks:
+1.  **NeRF Model**: Predicts geometry and material properties.
+    *   **Albedo**: `Sigmoid` (0-1). Diffuse color.
+    *   **Roughness**: `Sigmoid` (0-1). Specular spread.
+    *   **Metallic**: `Sigmoid` (0-1). Metalness.
+    *   **Normal**: `Tanh` (-1 to 1). Surface orientation.
+    *   **Density**: `Softplus` (0 to inf). Opacity.
+2.  **NeILF Model**: A **Neural Incident Light Field** that predicts incoming radiance for any `(Position, Direction)`. This replaces the simple point light, allowing for complex, spatially-varying environmental lighting.
 
 ### 2. Physics-Based Rendering (`src/renderer.cpp`)
-Standard NeRF uses Volume Rendering to accumulate color. We inject the **Cook-Torrance BRDF** into this process.
+We use **Monte Carlo Integration** to compute the final pixel color.
 For every sample point along a ray:
-1.  **Light Direction (`L`)**: Vector from point to light source.
-2.  **View Direction (`V`)**: Vector from point to camera.
-3.  **Half Vector (`H`)**: Bisector of `L` and `V`.
-4.  **Distribution (D)**: GGX Normal Distribution Function.
-5.  **Geometry (G)**: Smith Geometry Shadowing Function.
-6.  **Fresnel (F)**: Schlick's Approximation.
-7.  **Specular Term**: `(D * G * F) / (4 * dot(N, V) * dot(N, L))`
-8.  **Final Color**: `(k_d * Albedo / PI + Specular) * dot(N, L) * LightIntensity`
+1.  **Sample Lights**: We sample `N` random light directions on the sphere.
+2.  **Query NeILF**: We ask the NeILF model "how much light is coming from this direction?".
+3.  **Compute BRDF**: We evaluate the **Cook-Torrance BRDF** (GGX Distribution, Smith Geometry, Schlick Fresnel) for each light direction.
+4.  **Integrate**: `Color = Sum(Li * BRDF * dot(N, L))`
+5.  **Volume Rendering**: The shaded colors are composited using standard NeRF alpha blending.
 
-This color is then composited using the standard alpha-blending formula:
-`Pixel_Color = Sum(Transmittance_i * Alpha_i * Shaded_Color_i)`
+### 3. Optimization & Regularization
+To achieve high-quality decomposition, we implement advanced loss functions:
+*   **MSE Loss**: Standard reconstruction loss.
+*   **Normal Consistency Loss**: Penalizes normals that point away from the camera.
+*   **Roughness Entropy Loss**: Encourages the network to commit to smooth or rough surfaces (binary entropy).
+*   **Energy Conservation Loss**: Penalizes the BRDF if it reflects more energy than it receives (`Integral(BRDF) <= 1`).
+*   **Specular Regularization**: Penalizes high specular highlights on rough surfaces to encourage disentanglement.
 
-### 3. Relighting & Material Demo
+### 4. Relighting & Material Demo
 Because we have separated Material from Lighting, we can:
-*   **Relight**: Change the `Light Position` at runtime without retraining the network.
+*   **Relight**: Rotate the environment map or change the NeILF.
 *   **Material Override**: Render the learned geometry with forced materials (e.g., "Gold", "Plastic") to prove the geometry is disentangled from the appearance.
 The project includes demos for both.
 
@@ -63,8 +73,14 @@ The project includes demos for both.
 *   **High Performance**:
     *   **Mac MPS Support**: Fully accelerated on Apple Silicon (M1/M2/M3/M4) GPUs using Metal Performance Shaders.
     *   **Multithreading**: Uses OpenMP for parallel CPU operations.
-    *   **Ray Batching**: Implements stochastic ray sampling for fast and robust training.
-*   **PBR Pipeline**: Disentangles geometry and materials for relighting.
+    *   **Ray Batching**: Implements stochastic ray sampling and batched rendering for memory efficiency.
+*   **Interactive Visualization**:
+    *   **Real-time Preview**: View training progress and rendered scene in real-time.
+    *   **GUI Controls**: Adjust camera, training parameters, and visualization settings on the fly using ImGui.
+*   **True PBR Pipeline**:
+    *   **NeILF**: Neural Incident Light Field for realistic lighting.
+    *   **Monte Carlo**: Physically accurate rendering integration.
+    *   **Disentanglement**: Geometry, Albedo, Roughness, Normal, Metallic.
 *   **Cross-Platform**: Compatible with **macOS (Apple Silicon/Intel)**, **Linux**, and **Windows**.
 *   **LibTorch Backend**: Uses PyTorch's C++ frontend for automatic differentiation and tensor operations.
 
@@ -79,6 +95,7 @@ The project includes demos for both.
 3.  **LibTorch** (PyTorch C++ Library)
 4.  **OpenCV** (For image I/O)
 5.  **OpenMP** (For CPU multithreading)
+6.  **GLFW** (For windowing and input)
 
 ### Step-by-Step Setup
 
@@ -103,12 +120,12 @@ cNeRF/
 
 **macOS (Homebrew)**
 ```bash
-brew install cmake opencv libomp
+brew install cmake opencv libomp glfw
 ```
 
 **Ubuntu/Debian**
 ```bash
-sudo apt-get install cmake libopencv-dev libomp-dev
+sudo apt-get install cmake libopencv-dev libomp-dev libglfw3-dev
 ```
 
 **Windows**
@@ -150,14 +167,32 @@ Run the executable with the data directory and output directory.
 ./build/cNeRF ./data/lego ./output
 ```
 
-### 3. Output
+### 3. Interactive Controls
+The application launches a window with a real-time preview and control panel.
+
+**Control Panel:**
+*   **Training**: Pause/Resume training.
+*   **Target Iterations**: Set the number of iterations to train for (default: 50,000).
+*   **Save Checkpoint**: Manually save the current model state.
+
+**Camera Controls:**
+*   **Azimuth / Elevation**: Rotate the camera around the object.
+*   **Radius**: Zoom in/out.
+*   **Near / Far Plane**: Adjust the clipping planes to see inside or crop the scene.
+*   **Flip Axes**: Toggle this if the rendering looks upside down or mirrored (common with Blender vs. OpenCV coordinates).
+
+**Viewport Interaction:**
+*   **Rotate**: Click and drag with the **Left Mouse Button**.
+*   **Zoom**: Use the **Mouse Wheel**.
+
+### 4. Output
 The program will produce:
 *   **Training Logs**: Loss values in the console (updates every iteration).
 *   **Preview Frames**: `frame_*.png` (saved every 50 iterations).
-*   **Relighting Demo**: `light_orbit_*.png` (saved at the end).
-    *   These images show the object with a **moving light source**, demonstrating the PBR capabilities.
 *   **Dataset Comparisons**: `dataset_view_*.png` (saved at the end).
     *   Side-by-side comparison of Ground Truth vs. Rendered View.
+*   **Material Overrides**: `material_gold.png`, `material_plastic.png` (saved at the end).
+    *   Demonstrates geometry disentanglement by rendering the object with forced materials.
 *   **3D Point Cloud**: `model.ply` (saved at the end).
     *   Exported geometry that can be viewed in MeshLab or Blender.
 
@@ -166,21 +201,9 @@ The program will produce:
 ## 🛠 Project Structure
 
 *   `src/main.cpp`: Entry point. Handles data loading, training loop, and demo generation.
-*   `src/model.cpp`: Defines the Neural Network.
-    *   **Input**: (x, y, z) coordinate + viewing direction.
-    *   **Output**: 8 channels (Albedo RGB, Roughness, Normal XYZ, Density).
-*   `src/renderer.cpp`: Implements the Volumetric Rendering and PBR Shading.
-    *   Uses **Blinn-Phong** model for specular highlights.
+*   `src/model.cpp`: Defines the Neural Networks (`NeRFModel` and `NeILFModel`).
+*   `src/renderer.cpp`: Implements the Volumetric Rendering, Monte Carlo Integration, and PBR Shading.
 *   `scripts/convert_data.py`: Helper to convert datasets to `.pt` format.
-
----
-
-## 🖥 Windows Support
-This project is fully compatible with Windows.
-1.  Ensure you download the **Windows** version of LibTorch.
-2.  Use `cmake -G "Visual Studio 16 2019"` (or your version) to generate the solution.
-3.  Open the solution in Visual Studio and build the **Release** configuration.
-4.  Ensure `opencv_world*.dll` and `torch_cpu.dll` (and others) are in your PATH or next to the executable.
 
 ---
 
