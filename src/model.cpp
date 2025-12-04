@@ -10,7 +10,7 @@ NeRFModel::NeRFModel(const torch::Device &device, int L_embed, int D, int W)
     model_->push_back(torch::nn::Linear(W, W));
     model_->push_back(torch::nn::Functional(torch::relu));
   }
-  model_->push_back(torch::nn::Linear(W, 8));
+  model_->push_back(torch::nn::Linear(W, 9));
   model_->to(device_);
   register_module("model", model_);
 

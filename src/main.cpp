@@ -72,7 +72,11 @@ int main(int argc, char *argv[]) {
     // Perform forward pass and compute loss
     optimizer.zero_grad();
     auto rgb = renderer.render_rays(std::make_tuple(batch_rays_o, batch_rays_d), light_pos, true);
-    auto loss = torch::mse_loss(rgb, batch_target);
+    auto mse_loss = torch::mse_loss(rgb, batch_target);
+    
+    // Regularization (Optional - can be tuned)
+    // For now, we rely on the PBR model to disentangle, but we can add smoothness here.
+    auto loss = mse_loss;
 
     // Perform backward pass and update model parameters
     loss.backward();
@@ -80,7 +84,7 @@ int main(int argc, char *argv[]) {
 
     // Log progress periodically
     // Log progress every iteration
-    if (i % 1 == 0) {
+    if (i % 10 == 0) {
       std::cout << "Iteration: " << i + 1 << " Loss: " << loss.item<float>()
                 << std::endl;
     }
@@ -89,9 +93,6 @@ int main(int argc, char *argv[]) {
     if (i % plot_freq == 0) {
       // Render and save orbiting preview periodically
       std::cout << "Rendering preview..." << std::endl;
-      // For preview, we still want to render full images, so we use the original render method (which calls render_rays internally)
-      // But we need to make sure render_rays can handle the full image shape (H*W rays)
-      // The updated render_rays handles flat rays, so we just need to reshape the output back to HxW
       render_and_save_orbit_views(renderer, light_pos, n_preview_frames, output_path,
                                   4.0f);
     }
@@ -109,6 +110,28 @@ int main(int argc, char *argv[]) {
   std::cout << "Generating relighting demo..." << std::endl;
   render_and_save_light_orbit(renderer_hd, n_final_frames, output_path, 2.1f,
                               2.0f, 5.0f);
+
+  // Material Override Demo
+  std::cout << "Generating Material Override Demo..." << std::endl;
+  
+  // Gold Material
+  auto gold_albedo = torch::tensor({1.0f, 0.766f, 0.336f}, device).view({1, 1, 3});
+  auto gold_roughness = torch::tensor({0.2f}, device).view({1, 1, 1});
+  auto gold_metallic = torch::tensor({1.0f}, device).view({1, 1, 1});
+  
+  // Plastic Material (Blue)
+  auto plastic_albedo = torch::tensor({0.1f, 0.1f, 0.9f}, device).view({1, 1, 3});
+  auto plastic_roughness = torch::tensor({0.5f}, device).view({1, 1, 1});
+  auto plastic_metallic = torch::tensor({0.0f}, device).view({1, 1, 1});
+
+  // Render a single view with overrides
+  auto pose = poses[0]; // Use first pose
+  
+  auto gold_img = renderer_hd.render(pose, light_pos, false, 2.0f, 5.0f, 64, 64000, gold_albedo, gold_roughness, gold_metallic);
+  save_image(gold_img, output_path / "material_gold.png");
+  
+  auto plastic_img = renderer_hd.render(pose, light_pos, false, 2.0f, 5.0f, 64, 64000, plastic_albedo, plastic_roughness, plastic_metallic);
+  save_image(plastic_img, output_path / "material_plastic.png");
 
   // Render dataset views for comparison
   render_dataset_views(renderer_hd, poses, images, light_pos, output_path);

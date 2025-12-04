@@ -13,7 +13,10 @@ public:
   torch::Tensor render(const torch::Tensor &pose, const torch::Tensor &light_pos,
                        bool randomize = false, float start_distance = 2.0f,
                        float end_distance = 5.0f, int n_samples = 64,
-                       int batch_size = 64000) const;
+                       int batch_size = 64000,
+                       const torch::Tensor &override_albedo = torch::Tensor(),
+                       const torch::Tensor &override_roughness = torch::Tensor(),
+                       const torch::Tensor &override_metallic = torch::Tensor()) const;
 
   const torch::Device &device() const { return device_; }
 
@@ -23,7 +26,10 @@ public:
   torch::Tensor render_rays(const RayData &rays, const torch::Tensor &light_pos,
                             bool randomize, float start_distance = 2.0f,
                             float end_distance = 5.0f, int n_samples = 64,
-                            int batch_size = 64000) const;
+                            int batch_size = 64000,
+                            const torch::Tensor &override_albedo = torch::Tensor(),
+                            const torch::Tensor &override_roughness = torch::Tensor(),
+                            const torch::Tensor &override_metallic = torch::Tensor()) const;
 
 private:
   NeRFModel &model_;

@@ -11,14 +11,17 @@ NeRFRenderer::NeRFRenderer(NeRFModel &model, int H, int W, float focal,
 torch::Tensor NeRFRenderer::render(const torch::Tensor &pose, const torch::Tensor &light_pos,
                                    bool randomize, float start_distance,
                                    float end_distance, int n_samples,
-                                   int batch_size) const {
+                                   int batch_size,
+                                   const torch::Tensor &override_albedo,
+                                   const torch::Tensor &override_roughness,
+                                   const torch::Tensor &override_metallic) const {
   auto rays = get_rays(pose.to(device_));
   // Flatten rays for the renderer
   auto rays_o = std::get<0>(rays).view({-1, 3});
   auto rays_d = std::get<1>(rays).view({-1, 3});
   
   auto rgb_flat = render_rays(std::make_tuple(rays_o, rays_d), light_pos.to(device_), randomize, start_distance, end_distance, n_samples,
-                     batch_size);
+                     batch_size, override_albedo, override_roughness, override_metallic);
                      
   // Reshape back to image
   return rgb_flat.view({H_, W_, 3});
@@ -51,7 +54,10 @@ NeRFRenderer::RayData NeRFRenderer::get_rays(const torch::Tensor &pose) const {
 torch::Tensor NeRFRenderer::render_rays(const RayData &rays, const torch::Tensor &light_pos,
                                         bool randomize, float start_distance,
                                         float end_distance, int n_samples,
-                                        int batch_size) const {
+                                        int batch_size,
+                                        const torch::Tensor &override_albedo,
+                                        const torch::Tensor &override_roughness,
+                                        const torch::Tensor &override_metallic) const {
   // Unpack the ray origins and directions
   auto rays_o = std::get<0>(rays);
   auto rays_d = std::get<1>(rays);
@@ -87,40 +93,58 @@ torch::Tensor NeRFRenderer::render_rays(const RayData &rays, const torch::Tensor
       raw = torch::cat({raw, batch_raw}, 0);
     }
   }
-  raw = raw.view({N, n_samples, 8});
+  raw = raw.view({N, n_samples, 9});
 
   // Get volume properties
   auto albedo = torch::sigmoid(raw.index({"...", Slice(0, 3)}));
-  auto roughness = torch::sigmoid(raw.index({"...", 3}));
-  auto normal = torch::nn::functional::normalize(
-      torch::tanh(raw.index({"...", Slice(4, 7)})),
-      torch::nn::functional::NormalizeFuncOptions().dim(-1));
-  auto sigma_a = torch::relu(raw.index({"...", 7}));
+  if (override_albedo.defined() && override_albedo.numel() > 0) {
+      albedo = override_albedo.to(device_).expand_as(albedo);
+  }
 
-  // PBR Shading (Blinn-Phong)
+  auto roughness = torch::sigmoid(raw.index({"...", 3}));
+  if (override_roughness.defined() && override_roughness.numel() > 0) {
+      roughness = override_roughness.to(device_).expand_as(roughness);
+  }
+
+  auto metallic = torch::sigmoid(raw.index({"...", 4}));
+  if (override_metallic.defined() && override_metallic.numel() > 0) {
+      metallic = override_metallic.to(device_).expand_as(metallic);
+  }
+  auto normal = torch::nn::functional::normalize(
+      torch::tanh(raw.index({"...", Slice(5, 8)})),
+      torch::nn::functional::NormalizeFuncOptions().dim(-1));
+  auto sigma_a = torch::relu(raw.index({"...", 8}));
+
+  // PBR Shading (Cook-Torrance)
   auto light_dir = torch::nn::functional::normalize(
       light_pos - pts, torch::nn::functional::NormalizeFuncOptions().dim(-1));
   auto view_dir = torch::nn::functional::normalize(
       -rays_d.unsqueeze(1).expand_as(pts),
       torch::nn::functional::NormalizeFuncOptions().dim(-1));
-
-  // Diffuse
-  auto NdotL = torch::relu(torch::sum(normal * light_dir, -1));
-  auto diffuse = albedo * NdotL.unsqueeze(-1);
-
-  // Specular
   auto half_vec = torch::nn::functional::normalize(
       light_dir + view_dir,
       torch::nn::functional::NormalizeFuncOptions().dim(-1));
-  auto NdotH = torch::relu(torch::sum(normal * half_vec, -1));
-  
-  // Map roughness (0-1) to shininess (1-128)
-  // Roughness 0 -> Shininess 128 (Sharp)
-  // Roughness 1 -> Shininess 1 (Broad)
-  auto shininess = 128.0f * torch::pow(1.0f - roughness, 2.0f) + 1.0f;
-  auto specular = torch::pow(NdotH, shininess);
 
-  auto rgb = diffuse + specular.unsqueeze(-1);
+  auto NdotL = torch::relu(torch::sum(normal * light_dir, -1, true));
+  auto NdotV = torch::relu(torch::sum(normal * view_dir, -1, true));
+  
+  // Calculate F0 (Surface reflection at zero incidence)
+  auto F0 = torch::tensor({0.04f, 0.04f, 0.04f}, device_).view({1, 1, 3}); 
+  F0 = torch::lerp(F0, albedo, metallic.unsqueeze(-1));
+
+  // Cook-Torrance BRDF
+  auto D = ggx_distribution(normal, half_vec, roughness.unsqueeze(-1));
+  auto G = smith_geometry(normal, view_dir, light_dir, roughness.unsqueeze(-1));
+  auto F = schlick_fresnel(F0, torch::relu(torch::sum(half_vec * view_dir, -1, true)));
+
+  auto numerator = D * G * F;
+  auto denominator = 4.0f * NdotV * NdotL + 1e-6f;
+  auto specular = numerator / denominator;
+
+  auto kS = F;
+  auto kD = (1.0f - kS) * (1.0f - metallic.unsqueeze(-1));
+
+  auto rgb = (kD * albedo / M_PI + specular) * NdotL * 3.0f; // 3.0f is light intensity
   rgb = torch::clamp(rgb, 0.0f, 1.0f);
 
   // Render volume

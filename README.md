@@ -27,28 +27,33 @@ We then use a **Physics-Based Shader** (Blinn-Phong) during rendering to combine
 ## ⚙️ Technical Implementation
 
 ### 1. Neural Network Architecture (`src/model.cpp`)
-We modified the standard MLP (Multi-Layer Perceptron) to output **8 channels**:
+We modified the standard MLP (Multi-Layer Perceptron) to output **9 channels**:
 *   **Channels 0-2 (Albedo)**: `Sigmoid` activation (0-1 range). Represents diffuse color.
 *   **Channel 3 (Roughness)**: `Sigmoid` activation (0-1 range). Controls specular highlight size.
-*   **Channels 4-6 (Normal)**: `Tanh` activation (-1 to 1 range). Normalized to unit vector. Represents surface orientation.
-*   **Channel 7 (Density)**: `ReLU` activation (0 to infinity). Represents opacity.
+*   **Channel 4 (Metallic)**: `Sigmoid` activation (0-1 range). Controls metalness (0=Dielectric, 1=Metal).
+*   **Channels 5-7 (Normal)**: `Tanh` activation (-1 to 1 range). Normalized to unit vector. Represents surface orientation.
+*   **Channel 8 (Density)**: `ReLU` activation (0 to infinity). Represents opacity.
 
 ### 2. Physics-Based Rendering (`src/renderer.cpp`)
-Standard NeRF uses Volume Rendering to accumulate color. We inject the **Blinn-Phong Reflection Model** into this process.
+Standard NeRF uses Volume Rendering to accumulate color. We inject the **Cook-Torrance BRDF** into this process.
 For every sample point along a ray:
 1.  **Light Direction (`L`)**: Vector from point to light source.
 2.  **View Direction (`V`)**: Vector from point to camera.
 3.  **Half Vector (`H`)**: Bisector of `L` and `V`.
-4.  **Diffuse Term**: `Albedo * max(0, dot(Normal, L))`
-5.  **Specular Term**: `pow(max(0, dot(Normal, H)), 1/Roughness)`
-6.  **Final Color**: `Diffuse + Specular`
+4.  **Distribution (D)**: GGX Normal Distribution Function.
+5.  **Geometry (G)**: Smith Geometry Shadowing Function.
+6.  **Fresnel (F)**: Schlick's Approximation.
+7.  **Specular Term**: `(D * G * F) / (4 * dot(N, V) * dot(N, L))`
+8.  **Final Color**: `(k_d * Albedo / PI + Specular) * dot(N, L) * LightIntensity`
 
 This color is then composited using the standard alpha-blending formula:
 `Pixel_Color = Sum(Transmittance_i * Alpha_i * Shaded_Color_i)`
 
-### 3. Relighting Demo
-Because we have separated Material from Lighting, we can change the `Light Position` at runtime without retraining the network.
-The project includes a demo mode that orbits a point light around the object, showcasing dynamic specular highlights that move correctly across the surface.
+### 3. Relighting & Material Demo
+Because we have separated Material from Lighting, we can:
+*   **Relight**: Change the `Light Position` at runtime without retraining the network.
+*   **Material Override**: Render the learned geometry with forced materials (e.g., "Gold", "Plastic") to prove the geometry is disentangled from the appearance.
+The project includes demos for both.
 
 ---
 

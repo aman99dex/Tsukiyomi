@@ -180,7 +180,7 @@ void save_point_cloud(NeRFModel &model, const torch::Device &device,
     auto batch_embedded = model.add_positional_encoding(batch);
     auto raw = model.forward(batch_embedded);
     
-    auto sigma = torch::relu(raw.index({"...", 7}));
+    auto sigma = torch::relu(raw.index({"...", 8}));
     auto rgb = torch::sigmoid(raw.index({"...", Slice(0, 3)}));
     
     auto mask = sigma > threshold;
@@ -267,4 +267,32 @@ torch::Tensor create_theta_rotation_matrix(float theta) {
                      {std::sin(theta), 0.0f, std::cos(theta), 0.0f},
                      {0.0f, 0.0f, 0.0f, 1.0f}});
   return theta_mat;
+}
+
+// PBR Math Helpers
+torch::Tensor schlick_fresnel(const torch::Tensor &F0, const torch::Tensor &cos_theta) {
+    return F0 + (1.0f - F0) * torch::pow(1.0f - cos_theta, 5.0f);
+}
+
+torch::Tensor smith_geometry(const torch::Tensor &N, const torch::Tensor &V, const torch::Tensor &L, const torch::Tensor &roughness) {
+    auto k = torch::pow(roughness + 1.0f, 2.0f) / 8.0f;
+    auto NdotV = torch::relu(torch::sum(N * V, -1, true));
+    auto NdotL = torch::relu(torch::sum(N * L, -1, true));
+    
+    auto ggx1 = NdotV / (NdotV * (1.0f - k) + k + 1e-6f);
+    auto ggx2 = NdotL / (NdotL * (1.0f - k) + k + 1e-6f);
+    
+    return ggx1 * ggx2;
+}
+
+torch::Tensor ggx_distribution(const torch::Tensor &N, const torch::Tensor &H, const torch::Tensor &roughness) {
+    auto a2 = torch::pow(roughness, 4.0f);
+    auto NdotH = torch::relu(torch::sum(N * H, -1, true));
+    auto NdotH2 = torch::pow(NdotH, 2.0f);
+    
+    auto num = a2;
+    auto denom = (NdotH2 * (a2 - 1.0f) + 1.0f);
+    denom = M_PI * torch::pow(denom, 2.0f) + 1e-6f;
+    
+    return num / denom;
 }

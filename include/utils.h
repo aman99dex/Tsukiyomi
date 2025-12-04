@@ -52,4 +52,9 @@ torch::Tensor create_translation_matrix(float t);
 torch::Tensor create_phi_rotation_matrix(float phi);
 torch::Tensor create_theta_rotation_matrix(float theta);
 
+// PBR Math Helpers
+torch::Tensor schlick_fresnel(const torch::Tensor &F0, const torch::Tensor &cos_theta);
+torch::Tensor smith_geometry(const torch::Tensor &N, const torch::Tensor &V, const torch::Tensor &L, const torch::Tensor &roughness);
+torch::Tensor ggx_distribution(const torch::Tensor &N, const torch::Tensor &H, const torch::Tensor &roughness);
+
 #endif // UTILS_H_
