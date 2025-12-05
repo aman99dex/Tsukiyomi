@@ -88,6 +88,42 @@ void save_image(const torch::Tensor &tensor,
   cv::Mat image(cv::Size(width, height), CV_8UC3, tensor_normalized.data_ptr());
   cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
   cv::imwrite(file_path.string(), image);
+  cv::imwrite(file_path.string(), image);
+}
+
+void cleanup_old_previews(const std::filesystem::path &output_dir, int keep_count) {
+    std::vector<std::pair<int, std::filesystem::path>> previews;
+    
+    // Iterate over files
+    for (const auto& entry : std::filesystem::directory_iterator(output_dir)) {
+        if (entry.is_regular_file()) {
+            std::string filename = entry.path().filename().string();
+            // Check format: preview_<number>.png
+            if (filename.rfind("preview_", 0) == 0 && filename.find(".png") != std::string::npos && filename != "preview_latest.png") {
+                try {
+                    // Extract number
+                    std::string num_str = filename.substr(8, filename.length() - 12); // "preview_" len 8, ".png" len 4
+                    int iter = std::stoi(num_str);
+                    previews.push_back({iter, entry.path()});
+                } catch (...) {
+                    // Ignore malformed files
+                }
+            }
+        }
+    }
+    
+    // Sort descending by iteration
+    std::sort(previews.begin(), previews.end(), [](const auto& a, const auto& b) {
+        return a.first > b.first;
+    });
+    
+    // Delete old ones
+    if (previews.size() > keep_count) {
+        for (size_t i = keep_count; i < previews.size(); ++i) {
+            std::filesystem::remove(previews[i].second);
+            // std::cout << "Cleaned up old preview: " << previews[i].second << std::endl;
+        }
+    }
 }
 
 void render_and_save_orbit_views(const NeRFRenderer &renderer,

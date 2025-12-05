@@ -19,6 +19,7 @@ torch::Tensor load_tensor(const std::filesystem::path &file_path);
 float load_focal(const std::filesystem::path &file_path);
 void save_image(const torch::Tensor &tensor,
                 const std::filesystem::path &file_path);
+void cleanup_old_previews(const std::filesystem::path &output_dir, int keep_count = 5);
 
 // Rendering helper functions
 void render_and_save_orbit_views(const NeRFRenderer &renderer,

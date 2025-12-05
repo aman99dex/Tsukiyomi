@@ -271,6 +271,9 @@ int main(int argc, char *argv[]) {
             std::string filename = "preview_" + std::to_string(trainer.get_iteration()) + ".png";
             save_image(img, output_path / filename);
             save_image(img, output_path / "preview_latest.png");
+            
+            // Cleanup old previews
+            cleanup_old_previews(output_path, 5);
         }
         
         // Force Refresh Button
