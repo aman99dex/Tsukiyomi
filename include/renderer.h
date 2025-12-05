@@ -27,6 +27,7 @@ public:
   using RayData = std::tuple<torch::Tensor, torch::Tensor>;
 
   RayData get_rays(const torch::Tensor &pose) const;
+  RayData get_rays_batch(const torch::Tensor &pose, const torch::Tensor &coords) const;
   
   // Render a batch of rays
   std::map<std::string, torch::Tensor> render_rays(const RayData &rays,

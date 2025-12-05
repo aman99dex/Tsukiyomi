@@ -96,6 +96,25 @@ NeRFRenderer::RayData NeRFRenderer::get_rays(const torch::Tensor &pose) const {
   auto rays_o = pose.slice(0, 0, 3, 1).slice(1, 3, 4, 1).reshape({1, 1, 3}).expand(rays_d.sizes());
 
   return std::make_tuple(rays_o, rays_d);
+  return std::make_tuple(rays_o, rays_d);
+}
+
+NeRFRenderer::RayData NeRFRenderer::get_rays_batch(const torch::Tensor &pose, const torch::Tensor &coords) const {
+    // coords: [batch_size] flat indices
+    auto u = (coords % W_).to(torch::kFloat32);
+    auto v = (coords / W_).to(torch::kFloat32);
+    
+    auto dirs = torch::stack({(u - W_ * 0.5f) / focal_, -(v - H_ * 0.5f) / focal_,
+                              -torch::ones_like(u)},
+                             -1);
+    
+    // Rotate ray directions from camera frame to world frame
+    auto rays_d = torch::sum(dirs.unsqueeze(-2) * pose.slice(0, 0, 3, 1).slice(1, 0, 3, 1), -1);
+    
+    // Translate ray origins to world frame
+    auto rays_o = pose.slice(0, 0, 3, 1).slice(1, 3, 4, 1).reshape({1, 3}).expand(rays_d.sizes());
+    
+    return std::make_tuple(rays_o, rays_d);
 }
 
 std::map<std::string, torch::Tensor> NeRFRenderer::render_rays(const RayData &rays,

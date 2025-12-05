@@ -58,6 +58,7 @@ To achieve high-quality decomposition, we implement advanced loss functions:
 *   **Roughness Entropy Loss**: Encourages the network to commit to smooth or rough surfaces (binary entropy).
 *   **Energy Conservation Loss**: Penalizes the BRDF if it reflects more energy than it receives (`Integral(BRDF) <= 1`).
 *   **Specular Regularization**: Penalizes high specular highlights on rough surfaces to encourage disentanglement.
+*   **Batched Ray Sampling**: We sample pixels first and generate rays on-demand, allowing for larger batch sizes (default: 4096) and better GPU saturation.
 
 ### 4. Relighting & Material Demo
 Because we have separated Material from Lighting, we can:
@@ -74,6 +75,7 @@ The project includes demos for both.
     *   **Mac MPS Support**: Fully accelerated on Apple Silicon (M1/M2/M3/M4) GPUs using Metal Performance Shaders.
     *   **Multithreading**: Uses OpenMP for parallel CPU operations.
     *   **Ray Batching**: Implements stochastic ray sampling and batched rendering for memory efficiency.
+    *   **Optimized Ray Generation**: Generates rays only for active pixels to minimize GPU overhead and maximize throughput.
 *   **Interactive Visualization**:
     *   **Real-time Preview**: View training progress and rendered scene in real-time.
     *   **GUI Controls**: Adjust camera, training parameters, and visualization settings on the fly using ImGui.

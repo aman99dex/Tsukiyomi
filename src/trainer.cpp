@@ -27,23 +27,22 @@ Trainer::Trainer(const std::filesystem::path& data_path, const std::filesystem::
 void Trainer::step() {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    int batch_size = 2048;
+    int batch_size = 4096;
     
     // Random ray batching
     int img_idx = torch::randint(0, poses_.size(0), {1}, torch::dtype(torch::kLong)).item<int>();
     auto target_pose = poses_[img_idx];
     auto target_img = images_[img_idx];
 
-    // Get rays
-    auto rays = renderer_.get_rays(target_pose);
-    auto rays_o = std::get<0>(rays).reshape({-1, 3});
-    auto rays_d = std::get<1>(rays).reshape({-1, 3});
-
     // Random sampling of pixels
     auto coords = torch::randint(0, H_ * W_, {batch_size},
                                  torch::dtype(torch::kLong).device(device_));
-    auto rays_o_batch = rays_o.index_select(0, coords);
-    auto rays_d_batch = rays_d.index_select(0, coords);
+                                 
+    // Get rays for batch only
+    auto rays = renderer_.get_rays_batch(target_pose, coords);
+    auto rays_o_batch = std::get<0>(rays);
+    auto rays_d_batch = std::get<1>(rays);
+    
     auto target_rgb = target_img.reshape({-1, 3}).index_select(0, coords);
 
     optimizer_->zero_grad();
