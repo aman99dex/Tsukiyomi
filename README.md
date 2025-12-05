@@ -85,6 +85,30 @@ The project includes demos for both.
     *   **Disentanglement**: Geometry, Albedo, Roughness, Normal, Metallic.
 *   **Cross-Platform**: Compatible with **macOS (Apple Silicon/Intel)**, **Linux**, and **Windows**.
 *   **LibTorch Backend**: Uses PyTorch's C++ frontend for automatic differentiation and tensor operations.
+    
+---
+
+## 🌍 Real-world Use Cases
+
+### 1. Next-Gen E-Commerce & Product Visualization
+*   **The Problem**: Current 3D viewers look "fake" or require expensive manual modeling. Photos are static.
+*   **The Solution**: Scan a product (shoe, watch, car) and display it in *any* virtual environment. The system understands the material (metallic, matte), allowing it to reflect virtual lights realistically.
+
+### 2. Augmented Reality (AR) & Virtual Reality (VR)
+*   **The Problem**: Virtual objects look out of place in real rooms because lighting doesn't match.
+*   **The Solution**: PBR-NeRF allows for **consistent lighting**. A scanned statue placed in your living room via AR will reflect the *actual* lights in your room.
+
+### 3. VFX & Virtual Production
+*   **The Problem**: "Relighting" a scene after filming is difficult.
+*   **The Solution**: Studios can capture a scene and **change the lighting in post-production** (e.g., move the sun, change shadows) without reshooting.
+
+### 4. Game Asset Creation (Photogrammetry 2.0)
+*   **The Problem**: Photogrammetry "bakes" shadows into textures.
+*   **The Solution**: This project performs **Inverse Rendering**, providing clean Albedo/Roughness maps ready for game engines like Unreal Engine 5.
+
+### 5. Digital Heritage
+*   **The Problem**: Standard scans miss the "feel" of materials (gold, marble).
+*   **The Solution**: Accurately preserves surface properties, allowing future generations to see how artifacts interact with light.
 
 ---
 
@@ -206,6 +230,16 @@ The program will produce:
 *   `src/model.cpp`: Defines the Neural Networks (`NeRFModel` and `NeILFModel`).
 *   `src/renderer.cpp`: Implements the Volumetric Rendering, Monte Carlo Integration, and PBR Shading.
 *   `scripts/convert_data.py`: Helper to convert datasets to `.pt` format.
+
+---
+
+## 🔮 Future Improvements
+
+1.  **Environment Map Rotation**: Implement full rotation of the NeILF for dynamic relighting demos.
+2.  **Mesh Export**: Improve the marching cubes resolution and export UV-unwrapped meshes with baked textures.
+3.  **CUDA Support**: Optimize the CUDA kernels for NVIDIA GPUs (currently optimized for Mac MPS).
+4.  **GUI Enhancements**: Add more material editing controls (e.g., sliders for global roughness/metallic offsets).
+5.  **NeILF++**: Implement the separate Sun/Sky model for even better outdoor lighting decomposition.
 
 ---
 
