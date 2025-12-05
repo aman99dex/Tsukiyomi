@@ -167,6 +167,12 @@ cmake ..
 make  # On Windows, open the generated .sln file or use 'cmake --build .'
 ```
 
+> [!NOTE]
+> **Linux Users**: If you encounter an error like `error while loading shared libraries: libtorch.so`, you need to add the LibTorch library path to your environment:
+> ```bash
+> export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/../libtorch/lib
+> ```
+
 ---
 
 ## 🏃 Usage

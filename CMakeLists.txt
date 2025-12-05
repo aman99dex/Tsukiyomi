@@ -17,7 +17,7 @@ if(CUDA_FOUND)
 endif()
 
 # Configure libtorch and OpenCV
-list(APPEND CMAKE_PREFIX_PATH "libtorch")
+list(APPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/libtorch")
 find_package(Torch REQUIRED)
 find_package(OpenCV REQUIRED)
 
